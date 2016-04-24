@@ -23,6 +23,7 @@ type Config struct {
 	LocalPort  int         `json:"local_port"`
 	Password   string      `json:"password"`
 	Method     string      `json:"method"` // encryption method
+	EnableUDP  bool        `json:"enable_udp"`
 
 	// following options are only used by server
 	PortPassword map[string]string `json:"port_password"`

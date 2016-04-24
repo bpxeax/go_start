@@ -30,6 +30,7 @@ func (c *Conn) Close() error {
 }
 
 func RawAddr(addr string) (buf []byte, err error) {
+	// put raw domain addr to socks 5 request
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, fmt.Errorf("shadowsocks: address error %s %v", addr, err)
@@ -40,8 +41,8 @@ func RawAddr(addr string) (buf []byte, err error) {
 	}
 
 	hostLen := len(host)
-	l := 1 + 1 + hostLen + 2 // addrType + lenByte + address + port
-	buf = make([]byte, l)
+	buff_len := 1 + 1 + hostLen + 2 // addrType + lenByte + address + port
+	buf = make([]byte, buff_len)
 	buf[0] = 3             // 3 means the address is domain name
 	buf[1] = byte(hostLen) // host address length  followed by host address
 	copy(buf[2:], host)

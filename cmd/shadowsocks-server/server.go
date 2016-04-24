@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"log"
 	"net"
@@ -15,12 +14,15 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+
+	ss "github.com/go_start/shadowsocks"
 )
 
 var debug ss.DebugLog
 
 func getRequest(conn *ss.Conn) (host string, extra []byte, err error) {
 	const (
+		// socks 5 protocol
 		idType  = 0 // address type index
 		idIP0   = 1 // ip addres start index
 		idDmLen = 1 // domain address length index
@@ -208,7 +210,7 @@ func (pm *PasswdManager) updatePortPasswd(port, password string) {
 	}
 	// run will add the new port listener to passwdManager.
 	// So there maybe concurrent access to passwdManager and we need lock to protect it.
-	go run(port, password)
+	go runTCP(port, password)
 }
 
 var passwdManager = PasswdManager{portListener: map[string]*PortListener{}}
@@ -254,20 +256,20 @@ func waitSignal() {
 	}
 }
 
-func run(port, password string) {
-	ln, err := net.Listen("tcp", ":"+port)
+func runTCP(port, password string) {
+	tcp_link, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Printf("error listening port %v: %v\n", port, err)
+		log.Printf("error listening tcp port %v: %v\n", port, err)
 		os.Exit(1)
 	}
-	passwdManager.add(port, password, ln)
+	passwdManager.add(port, password, tcp_link)
 	var cipher *ss.Cipher
-	log.Printf("server listening port %v ...\n", port)
+	log.Printf("server listening tcp port %v ...\n", port)
 	for {
-		conn, err := ln.Accept()
+		conn, err := tcp_link.Accept()
 		if err != nil {
 			// listener maybe closed to update password
-			debug.Printf("accept error: %v\n", err)
+			debug.Printf("tcp accept error: %v\n", err)
 			return
 		}
 		// Creating cipher upon first connection.
@@ -281,6 +283,31 @@ func run(port, password string) {
 			}
 		}
 		go handleConnection(ss.NewConn(conn, cipher.Copy()))
+	}
+}
+
+func runUDP(port, password string) {
+	udp_addr, err := net.ResolveUDPAddr("udp", ":"+port)
+	if err != nil {
+		log.Printf("error resolve udp addr\n")
+		return
+	}
+	udp_link, err := net.ListenUDP("udp", udp_addr)
+	if err != nil {
+		log.Printf("error listening udp port %v: %v\n", port, err)
+		return
+	}
+	log.Printf("server listening udp port %v ...\n", port)
+	for {
+		buffer := make([]byte, 256)
+		_, source_addr, err := udp_link.ReadFromUDP(buffer)
+		if err != nil {
+			debug.Printf("udp accept error: %v \n", err)
+			return
+		}
+		log.Printf("udp accept success: %v\n", buffer)
+
+		udp_link.WriteToUDP(buffer, source_addr)
 	}
 }
 
@@ -356,8 +383,12 @@ func main() {
 	if core > 0 {
 		runtime.GOMAXPROCS(core)
 	}
+
 	for port, password := range config.PortPassword {
-		go run(port, password)
+		go runTCP(port, password)
+		if config.EnableUDP {
+			go runUDP(port, password)
+		}
 	}
 
 	waitSignal()
